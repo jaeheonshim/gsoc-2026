@@ -50,8 +50,15 @@ else
 This is the important part for how the only full group by error is triggered. Some logic to unpack here.
  - First, if the current field isn't in an aggregate function at all, then we're definitely not using an aggregated column. So we mark it as true
  - Otherwise, if it is in an aggregate function like `SUM`, then you still don't know if the field is aggregated or not
-	 - If the field resolves against an outer query block (`outer_fixed` is true), then it's _possible_ that this field gets hoisted and is aggregated in an outer query block after all. But not for sure
-	 - Otherwise, we know the field resolves around the current `select`'s query block. So if the agg function's nest level is not equal to the nest level of the current select, then you're not actually aggregating the field within the same select. Example:
+	 - If the field resolves against an outer query block (`outer_fixed` is true), then it's _possible_ that this field gets hoisted and is aggregated in an outer query block after all. But not for sure. Example:
+```sql
+SELECT t1.a,
+ (SELECT SUM(t1.b) FROM t2)
+FROM t1
+GROUP BY t1.a;
+```
+
+ - Otherwise, we know the field resolves around the current `select`'s query block. So if the agg function's nest level is not equal to the nest level of the current select, then you're not actually aggregating the field within the same select. Example:
 ```sql
 SELECT t1.a, SUM(t1.b + (SELECT t2.c FROM t2 WHERE t2.id = t1.id))
 FROM t1
@@ -65,15 +72,15 @@ This is super important as it marks each field with whether it's being aggregate
 
 Now we finish out `setup_fields` and go into the next function. To foreshadow, this function returns a non successful code!
 
-- `setup_without_group` (`sql/sql_select.cc`)
+- `setup_without_group` (`sql/sql_select.cc`) (fails here!!!)
 	- Stepping through this we can see `res=1` after `select_group` so let's step in there
 - `setup_group` (`sql/sql_select.cc`)
 	- Looks like the same struct that is used for order by is used for the group by clause lol
 	- There's an obvious block here that handles the `ONLY_FULL_GROUP_BY` rejection. Copying a useful comment from the code here for reference
 	- `First we check an expression from the select list against the GROUP BY list. If it's found there then it's ok. It's also ok if this expression is a constant or an aggregate function. Otherwise we scan the list of non-aggregated fields and if we'll find at least one field reference that belongs to this expression and doesn't occur in the GROUP BY list we throw an error. If there are no fields in the created list for a select list expression this means that all fields in it are used under aggregate functions.`
-	- The while loop is a classic two pointers problem
-	- You have the pointer to every expression in the SELECT-list, this is `li`. You also have the pointer to all of the non aggregated fields we got in the previous step, this is `naf_it`. `naf_it` stays behind `it`
-	- You walk through every item in the select list, sequentially, and if it falls through this if statement
+	- The while loop is a classic two pointers technique
+		- You have the pointer to every expression in the SELECT-list, this is `li`. You also have the pointer to all of the non aggregated fields we got in the previous step, this is `naf_it`. `naf_it` stays behind `it`
+		- You walk through every item in the select list, sequentially, and if it falls through this if statement
 ```cpp
   if (item->type() != Item::SUM_FUNC_ITEM &&
 	  item->marker != MARKER_UNDEF_POS &&

@@ -1,0 +1,1 @@
+- [ ] How does ANY_VALUE behave in MySQL when there is no `GROUP_BY` clause? (Equivalent handling code in MariaDB is lines 1830-1841 in `sql/sql_select.cc`)
